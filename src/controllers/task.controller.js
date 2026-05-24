@@ -114,6 +114,38 @@ export async function remove(req, res, next) {
   }
 }
 
+export async function postpone(req, res, next) {
+  try {
+    const days = Number(req.body?.days ?? 1);
+    const result = await taskService.postponeTask(
+      Number(req.params.id),
+      req.user.homeId,
+      days
+    );
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function split(req, res, next) {
+  try {
+    const result = await taskService.splitTask(Number(req.params.id), req.user.homeId);
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function quickMicro(req, res, next) {
+  try {
+    const task = await taskService.createQuickMicro(req.user.homeId, req.body);
+    res.status(201).json(task);
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function complete(req, res, next) {
   try {
     const durationActualMin =

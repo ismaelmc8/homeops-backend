@@ -104,7 +104,7 @@ export function applyColumnLimits(columns) {
 }
 
 export function buildKanbanColumns(enriched, { recoveryMode = false, microOnly = false } = {}) {
-  let pending = enriched.filter((t) => t.column !== "recent");
+  let pending = enriched.filter((t) => t.column !== "recent" && t.column !== "snoozed");
 
   if (recoveryMode) {
     pending = pending.filter((t) => passesRecoveryFilter(t, t.column));

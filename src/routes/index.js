@@ -10,6 +10,8 @@ import memberRoutes from "./member.routes.js";
 import eventRoutes from "./event.routes.js";
 import goalRoutes from "./goal.routes.js";
 import socialRoutes from "./social.routes.js";
+import visualizationRoutes from "./visualization.routes.js";
+import templateRoutes from "./template.routes.js";
 
 const router = Router();
 
@@ -24,5 +26,7 @@ router.use("/metrics", metricsRoutes);
 router.use("/events", eventRoutes);
 router.use("/goals", goalRoutes);
 router.use("/social", socialRoutes);
+router.use("/visualization", visualizationRoutes);
+router.use("/templates", templateRoutes);
 
 export default router;

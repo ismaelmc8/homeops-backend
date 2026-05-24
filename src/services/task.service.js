@@ -86,8 +86,10 @@ export async function getKanban(
 
   const enriched = filteredTasks.map((t) => {
     const zone = zoneMap[t.zone_id] ?? { dirt_level: t.zone_dirt_level, name: t.zone_name };
-    const column = kanbanColumn(t, zone);
-    const priority = computePriority(t, zone, { recoveryMode });
+    const snoozed = t.snoozed_until && new Date(t.snoozed_until) > new Date();
+    let column = kanbanColumn(t, zone);
+    if (snoozed) column = "snoozed";
+    const priority = snoozed ? 0 : computePriority(t, zone, { recoveryMode });
     const daysSince = daysSinceCompletion(t.last_completed_at);
     let scheduleStatus = "ok";
     if (daysSince !== null) {
@@ -383,4 +385,90 @@ export async function getMetricsSummary(homeId, userId) {
       nearLimit: fatiguePoints >= FATIGUE_LIMIT - 2 && fatiguePoints <= FATIGUE_LIMIT,
     },
   };
+}
+
+export async function postponeTask(taskId, homeId, days = 1) {
+  const task = await taskModel.findById(taskId, homeId);
+  if (!task) throw new NotFoundError("Tarea no encontrada.");
+  const d = Math.min(14, Math.max(1, Math.round(Number(days) || 1)));
+  const until = new Date(Date.now() + d * 24 * 60 * 60 * 1000);
+  await taskModel.setSnooze(taskId, homeId, until);
+  return {
+    taskId,
+    snoozedUntil: until.toISOString(),
+    message: `Pospuesta ${d} día${d > 1 ? "s" : ""}.`,
+  };
+}
+
+export async function splitTask(taskId, homeId) {
+  const task = await taskModel.findById(taskId, homeId);
+  if (!task) throw new NotFoundError("Tarea no encontrada.");
+  if (task.is_micro || task.task_type === "micro") {
+    throw new BadRequestError("Las microtareas no se dividen.");
+  }
+
+  const halfDur = Math.max(5, Math.floor(task.duration_min / 2));
+  const partA = `${task.name} (1/2)`;
+  const partB = `${task.name} (2/2)`;
+
+  await taskModel.update(taskId, homeId, { active: false });
+
+  const a = await taskModel.create({
+    homeId,
+    zoneId: task.zone_id,
+    name: partA,
+    taskType: task.task_type,
+    difficulty: Math.max(1, task.difficulty - 1),
+    durationMin: halfDur,
+    frequencyIdealDays: task.frequency_ideal_days,
+    frequencyToleranceDays: task.frequency_tolerance_days,
+    frequencyCriticalDays: task.frequency_critical_days,
+    dirtReduction: Math.max(1, Math.floor(task.dirt_reduction / 2)),
+    isMicro: false,
+    isCooperative: !!task.is_cooperative,
+  });
+
+  const b = await taskModel.create({
+    homeId,
+    zoneId: task.zone_id,
+    name: partB,
+    taskType: "micro",
+    difficulty: 1,
+    durationMin: halfDur,
+    frequencyIdealDays: 1,
+    frequencyToleranceDays: 1,
+    frequencyCriticalDays: 2,
+    dirtReduction: 1,
+    isMicro: true,
+    isCooperative: false,
+  });
+
+  return {
+    message: "Tarea dividida en dos partes más manejables.",
+    deactivatedTaskId: taskId,
+    created: [a, b],
+  };
+}
+
+export async function createQuickMicro(homeId, body) {
+  const zoneId = Number(body.zoneId);
+  if (!zoneId) throw new BadRequestError("Indica la zona (zoneId).");
+  const zone = await zoneModel.findById(zoneId, homeId);
+  if (!zone) throw new NotFoundError("Zona no encontrada.");
+
+  const name = (body.name || `Micro en ${zone.name}`).trim();
+  return taskModel.create({
+    homeId,
+    zoneId,
+    name,
+    taskType: "micro",
+    difficulty: 1,
+    durationMin: body.durationMin ?? 5,
+    frequencyIdealDays: 1,
+    frequencyToleranceDays: 1,
+    frequencyCriticalDays: 2,
+    dirtReduction: 1,
+    isMicro: true,
+    isCooperative: false,
+  });
 }

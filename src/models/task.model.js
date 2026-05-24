@@ -84,9 +84,17 @@ export async function remove(id, homeId) {
 
 export async function markCompleted(id, homeId, conn = pool) {
   await conn.query(
-    "UPDATE tasks SET last_completed_at = NOW() WHERE id = ? AND home_id = ?",
+    "UPDATE tasks SET last_completed_at = NOW(), snoozed_until = NULL WHERE id = ? AND home_id = ?",
     [id, homeId]
   );
+}
+
+export async function setSnooze(id, homeId, until) {
+  await pool.query(
+    "UPDATE tasks SET snoozed_until = ? WHERE id = ? AND home_id = ?",
+    [until, id, homeId]
+  );
+  return findById(id, homeId);
 }
 
 export async function listRecentCompletions(homeId, days = 7) {
