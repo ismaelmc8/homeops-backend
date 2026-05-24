@@ -94,4 +94,38 @@ src/
 sql/            migraciones numeradas
 ```
 
-Documentación: `../docs/HOMEOPS-RPG-PLAN-TECNICO.md`, fase [E0](../docs/evolutivos/E0-fundamentos.md).
+## Motor de recompensas (E2)
+
+Ver comentarios en `src/services/rewardEngine.js`. Ejecutar migración E2:
+
+```powershell
+npm run db:migrate
+npm test
+```
+
+Documentación: `../docs/evolutivos/E2-gamificacion-nucleo.md`.
+
+## Cola y prioridad (E3)
+
+Motor Kanban, prioridad invisible, modo recuperación y métricas. Migración E3 incluida en `npm run db:migrate`.
+
+```powershell
+npm run db:migrate
+npm test
+```
+
+Documentación: `../docs/evolutivos/E3-cola-y-prioridad.md` · Changelog: `../docs/changelog/E3.md`.
+
+## Hogar compartido (E4)
+
+Cooperación, asignación, eventos y objetivos semanales. Migración `005_e4_cooperation.sql` incluida en `npm run db:migrate`.
+
+**Sesiones:** JWT firmado en `Authorization: Bearer` guardado en `localStorage` del front (mismo enfoque E1).
+
+Documentación: `../docs/evolutivos/E4-hogar-compartido.md` · Changelog: `../docs/changelog/E4.md`.
+
+## Social y retención (E6)
+
+Feedback, kudos, bonus diario, microobjetivos, historial y MVP/ranking opt-in. Migración `006_e6_social.sql`.
+
+Documentación: `../docs/evolutivos/E6-social-y-retencion.md` · Changelog: `../docs/changelog/E6.md`.

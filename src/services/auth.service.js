@@ -11,7 +11,7 @@ import { NotFoundError } from "../exceptions/NotFoundError.js";
 import * as homeModel from "../models/home.model.js";
 import * as userModel from "../models/user.model.js";
 import * as tokenModel from "../models/activationToken.model.js";
-import { sendActivationEmail } from "./mail.service.js";
+import { sendActivationEmail, sendPasswordResetEmail } from "./mail.service.js";
 import { withTransaction } from "./home.service.js";
 
 const BCRYPT_ROUNDS = 10;
@@ -76,6 +76,7 @@ export async function validateActivationToken(token) {
     name: needsName ? null : row.name,
     homeName: row.home_name,
     needsName,
+    purpose: row.purpose ?? "activation",
   };
 }
 
@@ -86,7 +87,8 @@ export async function setPassword({ token, password, passwordConfirm, name }) {
   const row = await tokenModel.findValidToken(hashToken(token));
   if (!row) throw new NotFoundError("Enlace inválido o caducado.");
 
-  const needsName = !row.name?.trim();
+  const purpose = row.purpose ?? "activation";
+  const needsName = purpose === "activation" && !row.name?.trim();
   if (needsName && !name?.trim()) {
     throw new BadRequestError("Indica cómo quieres que te llamen en la app.");
   }
@@ -104,7 +106,37 @@ export async function setPassword({ token, password, passwordConfirm, name }) {
 
   const user = await userModel.findById(row.user_id);
   const jwtToken = signToken(user);
-  return { message: "Cuenta activada.", token: jwtToken, user: sanitizeUser(user) };
+  const msg =
+    purpose === "reset" ? "Contraseña actualizada." : "Cuenta activada.";
+  return { message: msg, token: jwtToken, user: sanitizeUser(user) };
+}
+
+export async function forgotPassword({ email }) {
+  if (!email?.trim()) {
+    throw new BadRequestError("El correo electrónico es obligatorio.");
+  }
+  const normalized = email.trim().toLowerCase();
+  const user = await userModel.findByEmail(normalized);
+
+  const generic = {
+    message:
+      "Si el correo está registrado, recibirás un enlace para restablecer la contraseña.",
+  };
+
+  if (!user || user.status !== "active" || !user.password_hash) {
+    return generic;
+  }
+
+  const rawToken = await withTransaction(async (conn) => {
+    await tokenModel.invalidateUserTokens(user.id, conn);
+    const raw = generateToken();
+    const expires = new Date(Date.now() + getActivationTokenHours() * 3600 * 1000);
+    await tokenModel.createToken(user.id, hashToken(raw), expires, conn, "reset");
+    return raw;
+  });
+
+  await sendPasswordResetEmail({ email: normalized, name: user.name, token: rawToken });
+  return generic;
 }
 
 export async function login({ email, password }) {

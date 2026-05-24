@@ -8,6 +8,7 @@ router.get("/registration-available", authController.registrationAvailable);
 router.post("/register", authController.register);
 router.get("/activation-token", authController.validateToken);
 router.post("/set-password", authController.setPassword);
+router.post("/forgot-password", authController.forgotPassword);
 router.post("/login", authController.login);
 router.post("/logout", authController.logout);
 router.get("/me", authMiddleware, authController.me);

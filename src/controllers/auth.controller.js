@@ -49,6 +49,15 @@ export async function me(req, res, next) {
   }
 }
 
+export async function forgotPassword(req, res, next) {
+  try {
+    const result = await authService.forgotPassword(req.body);
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function registrationAvailable(req, res, next) {
   try {
     const homeModel = await import("../models/home.model.js");

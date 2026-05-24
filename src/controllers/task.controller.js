@@ -1,11 +1,18 @@
 import * as taskModel from "../models/task.model.js";
+import * as assigneeModel from "../models/assignee.model.js";
 import * as taskService from "../services/task.service.js";
 import { dirtReductionForTaskType } from "../services/rewardEngine.js";
 import { NotFoundError } from "../exceptions/NotFoundError.js";
 
 export async function listKanban(req, res, next) {
   try {
-    const data = await taskService.getKanban(req.user.homeId);
+    const microOnly = req.query.microOnly === "1" || req.query.microOnly === "true";
+    const assignedToMe =
+      req.query.assignedToMe === "1" || req.query.assignedToMe === "true";
+    const data = await taskService.getKanban(req.user.homeId, req.user.id, {
+      microOnly,
+      assignedToMe,
+    });
     res.json(data);
   } catch (e) {
     next(e);
@@ -15,7 +22,14 @@ export async function listKanban(req, res, next) {
 export async function list(req, res, next) {
   try {
     const tasks = await taskModel.listByHome(req.user.homeId);
-    res.json(tasks);
+    const assigneeMap = await assigneeModel.listForTasks(tasks.map((t) => t.id));
+    res.json(
+      tasks.map((t) => ({
+        ...t,
+        is_cooperative: !!t.is_cooperative,
+        assignees: assigneeMap[t.id] ?? [],
+      }))
+    );
   } catch (e) {
     next(e);
   }
@@ -37,8 +51,13 @@ export async function create(req, res, next) {
       frequencyCriticalDays: b.frequencyCriticalDays ?? 3,
       dirtReduction: b.dirtReduction ?? dirtReductionForTaskType(taskType),
       isMicro: b.isMicro ?? taskType === "micro",
+      isCooperative: !!b.isCooperative,
     });
-    res.status(201).json(task);
+    if (b.assigneeIds?.length) {
+      await taskService.setTaskAssignees(task.id, req.user.homeId, b.assigneeIds);
+    }
+    const assignees = await assigneeModel.listForTask(task.id);
+    res.status(201).json({ ...task, assignees });
   } catch (e) {
     next(e);
   }
@@ -58,10 +77,28 @@ export async function update(req, res, next) {
       frequencyCriticalDays: b.frequencyCriticalDays,
       dirtReduction: b.dirtReduction,
       isMicro: b.isMicro,
+      isCooperative: b.isCooperative,
       active: b.active,
     });
     if (!task) throw new NotFoundError("Tarea no encontrada.");
-    res.json(task);
+    if (b.assigneeIds !== undefined) {
+      await taskService.setTaskAssignees(task.id, req.user.homeId, b.assigneeIds);
+    }
+    const assignees = await assigneeModel.listForTask(task.id);
+    res.json({ ...task, assignees });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function setAssignees(req, res, next) {
+  try {
+    const result = await taskService.setTaskAssignees(
+      Number(req.params.id),
+      req.user.homeId,
+      req.body.userIds ?? req.body.assigneeIds
+    );
+    res.json(result);
   } catch (e) {
     next(e);
   }
@@ -79,10 +116,19 @@ export async function remove(req, res, next) {
 
 export async function complete(req, res, next) {
   try {
+    const durationActualMin =
+      req.body?.durationActualMin != null ? Number(req.body.durationActualMin) : null;
+    const b = req.body ?? {};
     const result = await taskService.completeTask(
       Number(req.params.id),
       req.user.homeId,
-      req.user.id
+      req.user.id,
+      {
+        durationActualMin: Number.isFinite(durationActualMin) ? durationActualMin : null,
+        feedbackChip: b.feedbackChip ?? null,
+        feedbackEmoji: b.feedbackEmoji ?? null,
+        tags: b.tags ?? null,
+      }
     );
     res.json(result);
   } catch (e) {

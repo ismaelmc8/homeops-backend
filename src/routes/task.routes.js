@@ -6,6 +6,7 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get("/kanban", taskController.listKanban);
+router.put("/:id/assignees", requireRole("admin"), taskController.setAssignees);
 router.get("/", taskController.list);
 router.post("/", requireRole("admin"), taskController.create);
 router.put("/:id", requireRole("admin"), taskController.update);

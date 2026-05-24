@@ -1,9 +1,15 @@
 import { pool } from "../config/db.js";
 
-export async function createToken(userId, tokenHash, expiresAt, conn = pool) {
+export async function createToken(
+  userId,
+  tokenHash,
+  expiresAt,
+  conn = pool,
+  purpose = "activation"
+) {
   await conn.query(
-    "INSERT INTO activation_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
-    [userId, tokenHash, expiresAt]
+    "INSERT INTO activation_tokens (user_id, purpose, token_hash, expires_at) VALUES (?, ?, ?, ?)",
+    [userId, purpose, tokenHash, expiresAt]
   );
 }
 
@@ -17,6 +23,13 @@ export async function findValidToken(tokenHash) {
     [tokenHash]
   );
   return rows[0] ?? null;
+}
+
+export async function findValidTokenForPurpose(tokenHash, purpose) {
+  const row = await findValidToken(tokenHash);
+  if (!row) return null;
+  if (row.purpose && row.purpose !== purpose) return null;
+  return row;
 }
 
 export async function markTokenUsed(tokenId, conn = pool) {

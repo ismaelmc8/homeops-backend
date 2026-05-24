@@ -75,3 +75,12 @@ export async function findByIdInHome(userId, homeId) {
   );
   return rows[0] ?? null;
 }
+
+export async function touchLastActive(userId) {
+  await pool.query("UPDATE users SET last_active_at = NOW() WHERE id = ?", [userId]);
+}
+
+export async function getLastActive(userId) {
+  const [rows] = await pool.query("SELECT last_active_at FROM users WHERE id = ?", [userId]);
+  return rows[0]?.last_active_at ?? null;
+}

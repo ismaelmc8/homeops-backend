@@ -115,6 +115,44 @@ export async function sendActivationEmail({ email, name, token }) {
   });
 }
 
+function buildPasswordResetContent({ name, url, hours }) {
+  const subject = "Restablece tu contraseña HomeOps";
+  const text = [
+    `Hola ${name || ""},`,
+    "",
+    "Has solicitado restablecer tu contraseña. Abre este enlace:",
+    url,
+    "",
+    `Caduca en ${hours} horas.`,
+    "",
+    "Si no lo pediste, ignora este correo.",
+  ].join("\n");
+
+  const html = `
+    <p>Hola <strong>${name || "usuario"}</strong>,</p>
+    <p>Has solicitado restablecer tu contraseña en HomeOps.</p>
+    <p><a href="${url}">Restablecer contraseña</a></p>
+    <p>O copia este enlace:<br><code>${url}</code></p>
+    <p>Caduca en <strong>${hours} horas</strong>.</p>
+  `.trim();
+
+  return { subject, text, html };
+}
+
+export async function sendPasswordResetEmail({ email, name, token }) {
+  const url = `${getFrontendUrl()}/establecer-contrasena?token=${token}&mode=reset`;
+  const hours = getActivationTokenHours();
+  const { subject, text, html } = buildPasswordResetContent({ name, url, hours });
+  return deliverMail({
+    email,
+    subject,
+    text,
+    html,
+    logLabel: "Restablecer contraseña",
+    url,
+  });
+}
+
 export async function sendInvitationEmail({ email, homeName, token }) {
   const url = `${getFrontendUrl()}/establecer-contrasena?token=${token}`;
   const hours = getActivationTokenHours();

@@ -27,8 +27,8 @@ export async function create(data) {
     `INSERT INTO tasks (
       home_id, zone_id, name, task_type, difficulty, duration_min,
       frequency_ideal_days, frequency_tolerance_days, frequency_critical_days,
-      dirt_reduction, is_micro
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      dirt_reduction, is_micro, is_cooperative
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.homeId,
       data.zoneId,
@@ -41,6 +41,7 @@ export async function create(data) {
       data.frequencyCriticalDays,
       data.dirtReduction,
       data.isMicro ? 1 : 0,
+      data.isCooperative ? 1 : 0,
     ]
   );
   return findById(r.insertId, data.homeId);
@@ -58,6 +59,8 @@ export async function update(id, homeId, data) {
     frequency_critical_days: data.frequencyCriticalDays,
     dirt_reduction: data.dirtReduction,
     is_micro: data.isMicro !== undefined ? (data.isMicro ? 1 : 0) : undefined,
+    is_cooperative:
+      data.isCooperative !== undefined ? (data.isCooperative ? 1 : 0) : undefined,
     active: data.active !== undefined ? (data.active ? 1 : 0) : undefined,
   };
   const fields = [];
@@ -100,14 +103,48 @@ export async function listRecentCompletions(homeId, days = 7) {
   return rows;
 }
 
+export async function getCompletionsInPeriod(homeId, days = 7, userId = null) {
+  let sql = `SELECT c.zone_dirt_at_completion, c.duration_actual, c.coins_earned, c.xp_earned, c.user_id
+     FROM task_completions c
+     JOIN tasks t ON t.id = c.task_id
+     WHERE t.home_id = ? AND c.completed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`;
+  const params = [homeId, days];
+  if (userId != null) {
+    sql += " AND c.user_id = ?";
+    params.push(userId);
+  }
+  const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
 export async function recordCompletion(
-  { taskId, userId, zoneDirt, coins, xp },
+  {
+    taskId,
+    userId,
+    zoneDirt,
+    coins,
+    xp,
+    durationActual,
+    rewardBreakdown,
+    coopBonusCoins = 0,
+  },
   conn = pool
 ) {
+  const breakdownJson = rewardBreakdown ? JSON.stringify(rewardBreakdown) : null;
   const [r] = await conn.query(
-    `INSERT INTO task_completions (task_id, user_id, zone_dirt_at_completion, coins_earned, xp_earned)
-     VALUES (?, ?, ?, ?, ?)`,
-    [taskId, userId, zoneDirt, coins, xp]
+    `INSERT INTO task_completions
+       (task_id, user_id, zone_dirt_at_completion, coins_earned, coop_bonus_coins, xp_earned, duration_actual, reward_breakdown)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      taskId,
+      userId,
+      zoneDirt,
+      coins,
+      coopBonusCoins,
+      xp,
+      durationActual ?? null,
+      breakdownJson,
+    ]
   );
   return r.insertId;
 }
