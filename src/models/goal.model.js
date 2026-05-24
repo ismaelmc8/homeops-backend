@@ -1,4 +1,5 @@
 import { pool } from "../config/db.js";
+import { WEEKLY_GOAL_ROTATION } from "../constants/meta.js";
 
 function weekStartDate(d = new Date()) {
   const date = new Date(d);
@@ -19,10 +20,13 @@ export async function getOrCreateCurrent(homeId, conn = pool) {
   );
   if (existing[0]) return existing[0];
 
+  const weekNum = Math.floor(new Date(ws).getTime() / (7 * 86400000));
+  const rot = WEEKLY_GOAL_ROTATION[weekNum % WEEKLY_GOAL_ROTATION.length];
+
   await conn.query(
     `INSERT INTO home_weekly_goals (home_id, week_start, goal_type, target_value, reward_coins)
-     VALUES (?, ?, 'completions_count', 10, 50)`,
-    [homeId, ws]
+     VALUES (?, ?, ?, ?, ?)`,
+    [homeId, ws, rot.goalType, rot.target, rot.reward]
   );
   const [rows] = await conn.query(
     "SELECT * FROM home_weekly_goals WHERE home_id = ? AND week_start = ? LIMIT 1",

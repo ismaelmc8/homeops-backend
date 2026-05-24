@@ -22,13 +22,14 @@ export async function findById(id, homeId) {
   return rows[0] ?? null;
 }
 
-export async function create(data) {
-  const [r] = await pool.query(
+export async function create(data, conn = pool) {
+  const isBoss = data.isBoss ? 1 : 0;
+  const [r] = await conn.query(
     `INSERT INTO tasks (
       home_id, zone_id, name, task_type, difficulty, duration_min,
       frequency_ideal_days, frequency_tolerance_days, frequency_critical_days,
-      dirt_reduction, is_micro, is_cooperative
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      dirt_reduction, is_micro, is_cooperative, is_boss
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.homeId,
       data.zoneId,
@@ -42,9 +43,16 @@ export async function create(data) {
       data.dirtReduction,
       data.isMicro ? 1 : 0,
       data.isCooperative ? 1 : 0,
+      isBoss,
     ]
   );
-  return findById(r.insertId, data.homeId);
+  const [rows] = await conn.query(
+    `SELECT t.*, z.dirt_level AS zone_dirt_level, z.name AS zone_name
+     FROM tasks t JOIN zones z ON z.id = t.zone_id
+     WHERE t.id = ? AND t.home_id = ?`,
+    [r.insertId, data.homeId]
+  );
+  return rows[0];
 }
 
 export async function update(id, homeId, data) {

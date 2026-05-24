@@ -12,6 +12,7 @@ import goalRoutes from "./goal.routes.js";
 import socialRoutes from "./social.routes.js";
 import visualizationRoutes from "./visualization.routes.js";
 import templateRoutes from "./template.routes.js";
+import metaRoutes from "./meta.routes.js";
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use("/goals", goalRoutes);
 router.use("/social", socialRoutes);
 router.use("/visualization", visualizationRoutes);
 router.use("/templates", templateRoutes);
+router.use("/meta", metaRoutes);
 
 export default router;

@@ -1,9 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  computeChaosRisk,
-  assignDefaultGridPositions,
-} from "../src/services/visualization.service.js";
+import { assignDefaultGridPositions } from "../src/services/visualization.service.js";
+import { computeChaosRisk } from "../src/utils/chaos.js";
 
 test("computeChaosRisk rises with dirty zones", () => {
   const clean = computeChaosRisk(

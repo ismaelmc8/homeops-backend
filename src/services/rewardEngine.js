@@ -186,6 +186,7 @@ export function calculateReward({
   fatiguePointsBefore = 0,
   fatiguePointsAdded = 0,
   eventMultiplier = 1,
+  baseBuffMultiplier = 1,
 }) {
   const preventive = calculatePreventive({ difficulty, durationMin, dirtLevel });
   const afterPreventive = Math.round(preventive.afterPreventive);
@@ -221,6 +222,9 @@ export function calculateReward({
   const eventBonus =
     eventMultiplier > 1 ? Math.round(coins * (eventMultiplier - 1)) : 0;
   coins = Math.max(1, coins + eventBonus);
+  const baseBuffBonus =
+    baseBuffMultiplier > 1 ? Math.round(coins * (baseBuffMultiplier - 1)) : 0;
+  coins = Math.max(1, coins + baseBuffBonus);
 
   const xpTier = xpTierForDirt(dirtLevel);
   let xp = Math.max(1, Math.round(coins * xpTier));
@@ -246,6 +250,9 @@ export function calculateReward({
   }
   if (eventBonus > 0) {
     messages.push(`Evento activo: +${Math.round((eventMultiplier - 1) * 100)}% monedas.`);
+  }
+  if (baseBuffBonus > 0) {
+    messages.push(`Base viva: +${Math.round((baseBuffMultiplier - 1) * 100)}% monedas.`);
   }
 
   return {
@@ -276,6 +283,8 @@ export function calculateReward({
       fatiguePointsAfter: fatigueAfter,
       eventMultiplier,
       eventBonus,
+      baseBuffMultiplier,
+      baseBuffBonus,
       xpTier,
       coins,
       xp,

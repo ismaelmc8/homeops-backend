@@ -31,6 +31,7 @@ import {
   afterCompletionSocial,
   getSettings as getSocialSettings,
 } from "./social.service.js";
+import { getMetaDashboard, onTaskCompletedMeta, onBossTaskCompleted, getHomeBuffMultiplier } from "./meta.service.js";
 
 function daysSinceCompletion(lastCompletedAt) {
   if (!lastCompletedAt) return null;
@@ -112,6 +113,7 @@ export async function getKanban(
       durationMin: t.duration_min,
       isMicro: !!t.is_micro || t.task_type === "micro",
       isCooperative: !!t.is_cooperative,
+      isBoss: !!t.is_boss,
       assignees,
       assignedToMe: assignees.length === 0 || assignees.some((a) => a.userId === userId),
       column,
@@ -138,6 +140,7 @@ export async function getKanban(
   const weeklyMvp = await getWeeklyMvp(homeId);
   const friendlyRanking = await getFriendlyRanking(homeId);
   const socialSettings = await getSocialSettings(homeId);
+  const meta = await getMetaDashboard(homeId, userId);
 
   let welcomeMessage = null;
   if (recoveryMode) {
@@ -159,6 +162,7 @@ export async function getKanban(
     weeklyMvp,
     friendlyRanking,
     socialSettings,
+    meta,
     welcomeMessage,
     fatigue: {
       points: fatiguePoints,
@@ -217,6 +221,7 @@ export async function completeTask(
     activeEventRow ? { event_type: activeEventRow.eventType } : null,
     task.duration_min
   );
+  const baseBuffMultiplier = await getHomeBuffMultiplier(homeId);
 
   const reward = calculateReward({
     difficulty: task.difficulty,
@@ -231,11 +236,14 @@ export async function completeTask(
     fatiguePointsBefore,
     fatiguePointsAdded,
     eventMultiplier,
+    baseBuffMultiplier,
   });
 
   let coopBonusCoins = 0;
   let perfectDayBonus = 0;
   let dailyBonusCoins = 0;
+  let bossBonusCoins = 0;
+  let dailyMissionBonus = 0;
   let completionId = null;
   let microGoalProgress = null;
   const extraMessages = [];
@@ -269,8 +277,16 @@ export async function completeTask(
     extraMessages.push(...coop.messages);
 
     await taskModel.markCompleted(taskId, homeId, conn);
-    await zoneModel.reduceDirt(task.zone_id, homeId, reduction);
-    await userModel.addCoins(userId, reward.coins + coopBonusCoins, conn);
+
+    if (task.is_boss) {
+      const boss = await onBossTaskCompleted(homeId, taskId, userId, conn);
+      bossBonusCoins = boss.bossBonus;
+      extraMessages.push(...boss.messages);
+    } else {
+      await zoneModel.reduceDirt(task.zone_id, homeId, reduction);
+    }
+
+    await userModel.addCoins(userId, reward.coins + coopBonusCoins + bossBonusCoins, conn);
     await userModel.addXp(userId, reward.xp, conn);
 
     if (isRecurrentTask(task.task_type)) {
@@ -315,10 +331,26 @@ export async function completeTask(
         conn
       );
     }
+
+    const metaResult = await onTaskCompletedMeta(
+      homeId,
+      {
+        isMicro: !!task.is_micro || task.task_type === "micro",
+        isCooperative: !!task.is_cooperative,
+        dirtLevel,
+        userId,
+      },
+      conn
+    );
+    if (metaResult.dailyCompleted) {
+      dailyMissionBonus = 8;
+      extraMessages.push("¡Misión diaria del hogar completada! +8 monedas.");
+    }
   });
 
   const coins = await userModel.getWallet(userId);
-  const totalCoins = reward.coins + coopBonusCoins + perfectDayBonus + dailyBonusCoins;
+  const totalCoins =
+    reward.coins + coopBonusCoins + perfectDayBonus + dailyBonusCoins + bossBonusCoins + dailyMissionBonus;
 
   return {
     completionId,
@@ -327,6 +359,8 @@ export async function completeTask(
     coopBonusCoins,
     perfectDayBonus,
     dailyBonusCoins,
+    bossBonusCoins,
+    dailyMissionBonus,
     microGoal: microGoalProgress,
     xpEarned: reward.xp,
     wallet: coins,
@@ -335,6 +369,8 @@ export async function completeTask(
       coopBonusCoins,
       perfectDayBonus,
       dailyBonusCoins,
+      bossBonusCoins,
+      dailyMissionBonus,
     },
     streakCount: reward.newStreak,
     streakBroken: reward.streakBroken,

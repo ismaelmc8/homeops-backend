@@ -16,6 +16,13 @@ export function getEventCoinMultiplier(activeEvent, durationMin) {
       label: "Speedrun (+50%)",
     };
   }
+  if (activeEvent.event_type === "random_bonus") {
+    return {
+      multiplier: 1.15,
+      eventBonus: 0,
+      label: "Impulso sorpresa (+15%)",
+    };
+  }
   return { multiplier: 1, eventBonus: 0, label: null };
 }
 

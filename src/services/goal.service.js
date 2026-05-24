@@ -23,6 +23,44 @@ export async function computeGoalProgress(homeId, goal) {
     };
   }
 
+  if (goal.goal_type === "coop_completions_count") {
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS c FROM task_completions c
+       JOIN tasks t ON t.id = c.task_id
+       WHERE t.home_id = ? AND t.is_cooperative = 1
+         AND c.completed_at >= ? AND c.completed_at < ?`,
+      [homeId, weekStart, weekEnd.toISOString().slice(0, 10)]
+    );
+    const current = rows[0]?.c ?? 0;
+    const target = goal.target_value;
+    return {
+      current,
+      target,
+      percent: target ? Math.min(100, Math.round((current / target) * 100)) : 100,
+      met: current >= target,
+      label: `${target} tareas cooperativas esta semana`,
+    };
+  }
+
+  if (goal.goal_type === "micro_completions_count") {
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS c FROM task_completions c
+       JOIN tasks t ON t.id = c.task_id
+       WHERE t.home_id = ? AND (t.is_micro = 1 OR t.task_type = 'micro')
+         AND c.completed_at >= ? AND c.completed_at < ?`,
+      [homeId, weekStart, weekEnd.toISOString().slice(0, 10)]
+    );
+    const current = rows[0]?.c ?? 0;
+    const target = goal.target_value;
+    return {
+      current,
+      target,
+      percent: target ? Math.min(100, Math.round((current / target) * 100)) : 100,
+      met: current >= target,
+      label: `${target} microtareas esta semana`,
+    };
+  }
+
   const [rows] = await pool.query(
     `SELECT COUNT(*) AS c FROM task_completions c
      JOIN tasks t ON t.id = c.task_id

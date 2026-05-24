@@ -3,12 +3,19 @@ import * as zoneModel from "../models/zone.model.js";
 import * as taskModel from "../models/task.model.js";
 import { kanbanColumn } from "./rewardEngine.js";
 import {
+  getCurrentSeason,
+  syncLivingBase,
+  buildRecoveryPlan,
+  ensureBossMissions,
+} from "./meta.service.js";
+import {
   DIRT_LABELS,
   ZONE_ICONS,
   DEFAULT_ZONE_ICON,
   HEATMAP_DEFAULT_DAYS,
   HEATMAP_MAX_DAYS,
 } from "../constants/visualization.js";
+import * as metaModel from "../models/meta.model.js";
 
 function zoneIcon(name) {
   const key = (name || "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
@@ -27,35 +34,9 @@ function daysSinceCompletion(lastCompletedAt) {
   return (Date.now() - new Date(lastCompletedAt).getTime()) / (1000 * 60 * 60 * 24);
 }
 
-/** Riesgo de caos 0–100 (más alto = peor). No afecta monedas. */
-export function computeChaosRisk(zones, tasks) {
-  if (!zones.length) return 0;
+import { computeChaosRisk } from "../utils/chaos.js";
 
-  let score = 0;
-  for (const z of zones) {
-    const d = z.dirt_level ?? 0;
-    if (d >= 5) score += 18;
-    else if (d >= 4) score += 14;
-    else if (d >= 3) score += 9;
-    else if (d >= 2) score += 4;
-    else if (d >= 1) score += 1;
-  }
-
-  const zoneMap = Object.fromEntries(zones.map((z) => [z.id, z]));
-  for (const t of tasks) {
-    if (t.snoozed_until && new Date(t.snoozed_until) > new Date()) continue;
-    const zone = zoneMap[t.zone_id] ?? { dirt_level: t.zone_dirt_level ?? 0 };
-    const col = kanbanColumn(t, zone);
-    if (col === "critical") score += 6;
-    else if (col === "today") {
-      const days = daysSinceCompletion(t.last_completed_at);
-      if (days === null && (zone.dirt_level ?? 0) >= 3) score += 4;
-      else score += 2;
-    }
-  }
-
-  return Math.min(100, Math.round(score));
-}
+export { computeChaosRisk };
 
 /** Distribución en grid si no hay posiciones guardadas. */
 export function assignDefaultGridPositions(zones) {
@@ -108,6 +89,17 @@ export async function getVisualizationOverview(homeId) {
   );
 
   const chaosRisk = computeChaosRisk(zones, tasks);
+  await ensureBossMissions(homeId);
+  const { living } = await syncLivingBase(homeId);
+  const season = getCurrentSeason();
+  const recoveryPlan =
+    living.state === "recovery" ? buildRecoveryPlan(chaosRisk, zones) : null;
+  const bossMissions = (await metaModel.listActiveBossMissions(homeId)).map((b) => ({
+    id: b.id,
+    zoneId: b.zone_id,
+    zoneName: b.zone_name,
+    taskId: b.task_id,
+  }));
 
   return {
     zones: zoneCards,
@@ -124,6 +116,21 @@ export async function getVisualizationOverview(homeId) {
       if (t.snoozed_until && new Date(t.snoozed_until) > new Date()) return false;
       return kanbanColumn(t, z) !== "recent";
     }).length,
+    livingBase: {
+      state: living.state,
+      label: living.label,
+      buffPercent: living.buffPercent,
+      alert: living.alert,
+    },
+    season: {
+      key: season.key,
+      name: season.name,
+      emoji: season.emoji,
+      weekInSeason: season.weekInSeason,
+      weeksTotal: season.weeksTotal,
+    },
+    recoveryPlan,
+    bossMissions,
   };
 }
 
