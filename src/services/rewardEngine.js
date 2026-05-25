@@ -187,6 +187,7 @@ export function calculateReward({
   fatiguePointsAdded = 0,
   eventMultiplier = 1,
   baseBuffMultiplier = 1,
+  rpgModifiers = null,
 }) {
   const preventive = calculatePreventive({ difficulty, durationMin, dirtLevel });
   const afterPreventive = Math.round(preventive.afterPreventive);
@@ -232,6 +233,22 @@ export function calculateReward({
     xp = Math.max(1, Math.round(xp * (1 - FATIGUE_SOFT_PENALTY)));
   }
 
+  let fatiguePointsAddedAdjusted = fatiguePointsAdded;
+  if (rpgModifiers?.fatiguePointsMultiplier < 1) {
+    fatiguePointsAddedAdjusted = Math.max(
+      0,
+      Math.round(fatiguePointsAdded * rpgModifiers.fatiguePointsMultiplier)
+    );
+  }
+
+  if (rpgModifiers) {
+    coins = Math.max(
+      1,
+      Math.round(coins * rpgModifiers.specCoinMult * rpgModifiers.qualityCoinMult)
+    );
+    xp = Math.max(1, Math.round(xp * rpgModifiers.specXpMult * rpgModifiers.qualityXpMult));
+  }
+
   const messages = [];
   if (streak.streakBroken) {
     messages.push("Racha reiniciada: la zona necesitaba más cuidado de lo habitual.");
@@ -254,6 +271,12 @@ export function calculateReward({
   if (baseBuffBonus > 0) {
     messages.push(`Base viva: +${Math.round((baseBuffMultiplier - 1) * 100)}% monedas.`);
   }
+  if (rpgModifiers?.qualityCoinMult > 1) {
+    messages.push("Bonus calidad por buena valoración.");
+  }
+  if (rpgModifiers?.specCoinMult > 1) {
+    messages.push("Bonus de especialización aplicado.");
+  }
 
   return {
     coins,
@@ -263,7 +286,7 @@ export function calculateReward({
     streakMilestone: streak.milestone,
     streakAchievement: streak.achievement,
     streakBonus: streak.streakBonus,
-    fatiguePoints: fatigueAfter,
+    fatiguePoints: fatiguePointsBefore + fatiguePointsAddedAdjusted,
     fatigueWarning,
     fatiguePenaltyApplied,
     efficiencyPercent: efficiency.percent,
@@ -279,8 +302,9 @@ export function calculateReward({
       efficiencyRatio: efficiency.ratio,
       fatiguePenalty,
       fatiguePointsBefore,
-      fatiguePointsAdded,
-      fatiguePointsAfter: fatigueAfter,
+      fatiguePointsAdded: fatiguePointsAddedAdjusted,
+      fatiguePointsAfter: fatiguePointsBefore + fatiguePointsAddedAdjusted,
+      rpgModifiers: rpgModifiers ?? null,
       eventMultiplier,
       eventBonus,
       baseBuffMultiplier,

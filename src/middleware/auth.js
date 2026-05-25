@@ -16,6 +16,9 @@ export async function authMiddleware(req, res, next) {
     if (!user || user.status !== "active") {
       throw new UnauthorizedError("Sesión inválida.");
     }
+    if ((payload.tv ?? 0) !== (user.token_version ?? 0)) {
+      throw new UnauthorizedError("Sesión revocada. Inicia sesión de nuevo.");
+    }
     req.user = {
       id: user.id,
       homeId: user.home_id,

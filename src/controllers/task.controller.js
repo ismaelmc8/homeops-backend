@@ -160,6 +160,7 @@ export async function complete(req, res, next) {
         feedbackChip: b.feedbackChip ?? null,
         feedbackEmoji: b.feedbackEmoji ?? null,
         tags: b.tags ?? null,
+        qualityRating: b.qualityRating != null ? Number(b.qualityRating) : null,
       }
     );
     res.json(result);

@@ -6,21 +6,46 @@ import * as zoneModel from "../models/zone.model.js";
 export const SPEEDRUN_MULTIPLIER = 1.5;
 export const SPEEDRUN_MAX_MINUTES = 15;
 export const PERFECT_DAY_BONUS_COINS = 25;
+export const COOPERATIVE_DAY_MULTIPLIER = 1.25;
+export const COMBO_ROOMS_MULTIPLIER = 1.2;
+export const MASTER_MAINTENANCE_MULTIPLIER = 1.1;
 
 export function getEventCoinMultiplier(activeEvent, durationMin) {
   if (!activeEvent) return { multiplier: 1, eventBonus: 0, label: null };
-  if (activeEvent.event_type === "speedrun" && durationMin <= SPEEDRUN_MAX_MINUTES) {
+  const type = activeEvent.event_type ?? activeEvent.eventType;
+  if (type === "speedrun" && durationMin <= SPEEDRUN_MAX_MINUTES) {
     return {
       multiplier: SPEEDRUN_MULTIPLIER,
       eventBonus: 0,
       label: "Speedrun (+50%)",
     };
   }
-  if (activeEvent.event_type === "random_bonus") {
+  if (type === "random_bonus") {
     return {
       multiplier: 1.15,
       eventBonus: 0,
       label: "Impulso sorpresa (+15%)",
+    };
+  }
+  if (type === "cooperative_day") {
+    return {
+      multiplier: COOPERATIVE_DAY_MULTIPLIER,
+      eventBonus: 0,
+      label: "Día cooperativo (+25%)",
+    };
+  }
+  if (type === "combo_rooms") {
+    return {
+      multiplier: COMBO_ROOMS_MULTIPLIER,
+      eventBonus: 0,
+      label: "Combo habitaciones (+20%)",
+    };
+  }
+  if (type === "master_maintenance") {
+    return {
+      multiplier: MASTER_MAINTENANCE_MULTIPLIER,
+      eventBonus: 0,
+      label: "Mantenimiento maestro (+10%)",
     };
   }
   return { multiplier: 1, eventBonus: 0, label: null };
@@ -51,7 +76,14 @@ export async function listEvents(homeId) {
 }
 
 export async function createEvent(homeId, userId, { eventType, startsAt, endsAt }) {
-  if (!["speedrun", "perfect_day"].includes(eventType)) {
+  const allowed = [
+    "speedrun",
+    "perfect_day",
+    "cooperative_day",
+    "combo_rooms",
+    "master_maintenance",
+  ];
+  if (!allowed.includes(eventType)) {
     throw new BadRequestError("Tipo de evento no válido.");
   }
   const start = new Date(startsAt);

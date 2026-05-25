@@ -32,6 +32,13 @@ import {
   getSettings as getSocialSettings,
 } from "./social.service.js";
 import { getMetaDashboard, onTaskCompletedMeta, onBossTaskCompleted, getHomeBuffMultiplier } from "./meta.service.js";
+import { getSmartInsights } from "./smart.service.js";
+import * as rpgModel from "../models/rpg.model.js";
+import {
+  getActiveBuffEffects,
+  getRpgRewardModifiers,
+  afterCompletionAchievements,
+} from "./rpg.service.js";
 
 function daysSinceCompletion(lastCompletedAt) {
   if (!lastCompletedAt) return null;
@@ -126,7 +133,30 @@ export async function getKanban(
 
   enriched.sort((a, b) => b.priority - a.priority);
 
-  const queue = buildKanbanColumns(enriched, { recoveryMode, microOnly });
+  const smart = await getSmartInsights(homeId, userId, {
+    fatiguePoints,
+    fatigueLimit: FATIGUE_LIMIT,
+    enrichedTasks: enriched,
+    zones,
+  });
+
+  if (smart.settings.autoPriorityEnabled) {
+    for (const t of enriched) {
+      const boost = smart.taskBoosts?.[t.id];
+      if (boost) {
+        t.priority = boost.priority;
+        t.smartReasons = boost.smartReasons;
+      }
+    }
+    enriched.sort((a, b) => b.priority - a.priority);
+  }
+
+  const effectiveMicroOnly = microOnly || smart.effectiveMicroOnly;
+  const queue = buildKanbanColumns(enriched, {
+    recoveryMode,
+    microOnly: effectiveMicroOnly,
+    columnLimit: smart.columnLimit,
+  });
 
   const atRisk = zones.filter((z) => z.dirt_level >= 4).length;
   let homeSummary = "Estado: estable";
@@ -170,6 +200,19 @@ export async function getKanban(
       high: fatiguePoints > FATIGUE_LIMIT,
       nearLimit: fatiguePoints >= FATIGUE_LIMIT - 2 && fatiguePoints <= FATIGUE_LIMIT,
     },
+    smart: {
+      nextBestTask: smart.nextBestTask,
+      predictions: smart.predictions,
+      optimalHours: smart.optimalHours,
+      inOptimalWindow: smart.inOptimalWindow,
+      assigneeSuggestions: smart.assigneeSuggestions,
+      burnout: smart.burnout,
+      userPrefs: smart.userPrefs,
+      notifications: smart.notifications,
+      effectiveMicroOnly,
+      columnLimit: smart.columnLimit,
+      engineNote: smart.engineNote,
+    },
   };
 }
 
@@ -197,7 +240,13 @@ export async function completeTask(
   taskId,
   homeId,
   userId,
-  { durationActualMin = null, feedbackChip = null, feedbackEmoji = null, tags = null } = {}
+  {
+    durationActualMin = null,
+    feedbackChip = null,
+    feedbackEmoji = null,
+    tags = null,
+    qualityRating = null,
+  } = {}
 ) {
   await applyDeteriorationIfNeeded(homeId);
   const task = await taskModel.findById(taskId, homeId);
@@ -222,6 +271,21 @@ export async function completeTask(
     task.duration_min
   );
   const baseBuffMultiplier = await getHomeBuffMultiplier(homeId);
+  const prefs = await rpgModel.getPrefs(userId);
+  const { effects: buffEffects } = await getActiveBuffEffects(userId);
+  const q =
+    qualityRating != null && qualityRating >= 1 && qualityRating <= 5
+      ? Math.round(qualityRating)
+      : null;
+  const rpgModifiers = getRpgRewardModifiers({
+    specialization: prefs.specialization,
+    qualityRating: q,
+    dirtLevel,
+    durationMin: task.duration_min,
+    taskType: task.task_type,
+    isCooperative: !!task.is_cooperative,
+    buffEffects,
+  });
 
   const reward = calculateReward({
     difficulty: task.difficulty,
@@ -237,7 +301,9 @@ export async function completeTask(
     fatiguePointsAdded,
     eventMultiplier,
     baseBuffMultiplier,
+    rpgModifiers,
   });
+  const fatiguePointsToAdd = reward.breakdown?.fatiguePointsAdded ?? fatiguePointsAdded;
 
   let coopBonusCoins = 0;
   let perfectDayBonus = 0;
@@ -273,7 +339,10 @@ export async function completeTask(
       },
       conn
     );
-    coopBonusCoins = coop.coopBonusCoins;
+    coopBonusCoins = Math.round(coop.coopBonusCoins * rpgModifiers.coopBuffMultiplier);
+    if (coopBonusCoins > coop.coopBonusCoins) {
+      await userModel.addCoins(userId, coopBonusCoins - coop.coopBonusCoins, conn);
+    }
     extraMessages.push(...coop.messages);
 
     await taskModel.markCompleted(taskId, homeId, conn);
@@ -293,7 +362,24 @@ export async function completeTask(
       await streakModel.upsert(userId, taskId, reward.newStreak, conn);
     }
 
-    await fatigueModel.addPoints(userId, fatiguePointsAdded, conn);
+    await fatigueModel.addPoints(userId, fatiguePointsToAdd, conn);
+
+    if (q) {
+      await rpgModel.setCompletionQuality(completionId, q, conn);
+    }
+
+    await afterCompletionAchievements(
+      userId,
+      homeId,
+      {
+        streakCount: reward.newStreak,
+        dirtLevel,
+        isMicro: !!task.is_micro || task.task_type === "micro",
+        isCooperative: !!task.is_cooperative,
+        coopBonusCoins,
+      },
+      conn
+    );
     if (reward.fatigueWarning) {
       await fatigueModel.markWarned(userId, conn);
     }

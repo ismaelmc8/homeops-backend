@@ -9,6 +9,15 @@ export async function weekly(req, res, next) {
   }
 }
 
+export async function updateWeekly(req, res, next) {
+  try {
+    const goal = await goalService.setWeeklyGoal(req.user.homeId, req.body);
+    res.json(goal);
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function claim(req, res, next) {
   try {
     const result = await goalService.claimWeeklyGoal(req.user.homeId, req.user.id);

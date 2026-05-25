@@ -46,3 +46,35 @@ export async function findById(id, homeId) {
 export async function markClaimed(id, conn = pool) {
   await conn.query("UPDATE home_weekly_goals SET claimed_at = NOW() WHERE id = ?", [id]);
 }
+
+export async function updateCurrentGoal(homeId, data, conn = pool) {
+  const row = await getOrCreateCurrent(homeId, conn);
+  const fields = [];
+  const vals = [];
+  if (data.goalType) {
+    fields.push("goal_type = ?");
+    vals.push(data.goalType);
+  }
+  if (data.targetValue != null) {
+    fields.push("target_value = ?");
+    vals.push(data.targetValue);
+  }
+  if (data.rewardCoins != null) {
+    fields.push("reward_coins = ?");
+    vals.push(data.rewardCoins);
+  }
+  if (data.customLabel !== undefined) {
+    fields.push("custom_label = ?");
+    vals.push(data.customLabel);
+  }
+  if (data.setByAdmin) {
+    fields.push("set_by_admin = 1");
+  }
+  if (!fields.length) return row;
+  vals.push(row.id);
+  await conn.query(
+    `UPDATE home_weekly_goals SET ${fields.join(", ")} WHERE id = ?`,
+    vals
+  );
+  return findById(row.id, homeId);
+}

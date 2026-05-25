@@ -16,6 +16,9 @@ import {
   HEATMAP_MAX_DAYS,
 } from "../constants/visualization.js";
 import * as metaModel from "../models/meta.model.js";
+import * as smartModel from "../models/smart.model.js";
+import { predictZoneDirtLevel } from "./smart.service.js";
+import { PREDICTION_HISTORY_DAYS } from "../constants/smart.js";
 
 function zoneIcon(name) {
   const key = (name || "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
@@ -101,6 +104,16 @@ export async function getVisualizationOverview(homeId) {
     taskId: b.task_id,
   }));
 
+  const smartSettings = await smartModel.getHomeSettings(homeId);
+  let dirtPredictions = [];
+  if (smartSettings.predictions_enabled) {
+    const zoneStats = await smartModel.getZoneCompletionStats(homeId, PREDICTION_HISTORY_DAYS);
+    const statsByZone = Object.fromEntries(zoneStats.map((r) => [r.zone_id, r]));
+    dirtPredictions = zones
+      .map((z) => predictZoneDirtLevel(z, statsByZone[z.id]))
+      .filter((p) => p.label);
+  }
+
   return {
     zones: zoneCards,
     chaosRisk,
@@ -131,6 +144,7 @@ export async function getVisualizationOverview(homeId) {
     },
     recoveryPlan,
     bossMissions,
+    dirtPredictions,
   };
 }
 

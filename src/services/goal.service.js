@@ -82,6 +82,7 @@ export async function computeGoalProgress(homeId, goal) {
 export async function getWeeklyGoal(homeId) {
   const goal = await goalModel.getOrCreateCurrent(homeId);
   const progress = await computeGoalProgress(homeId, goal);
+  const label = goal.custom_label || progress.label;
   return {
     id: goal.id,
     weekStart: goal.week_start,
@@ -89,9 +90,31 @@ export async function getWeeklyGoal(homeId) {
     targetValue: goal.target_value,
     rewardCoins: goal.reward_coins,
     claimed: !!goal.claimed_at,
-    progress,
+    setByAdmin: !!goal.set_by_admin,
+    customLabel: goal.custom_label,
+    progress: { ...progress, label },
     canClaim: progress.met && !goal.claimed_at,
   };
+}
+
+export async function setWeeklyGoal(homeId, body) {
+  const allowed = [
+    "completions_count",
+    "zero_critical_zones",
+    "coop_completions_count",
+    "micro_completions_count",
+  ];
+  if (!allowed.includes(body.goalType)) {
+    throw new BadRequestError("Tipo de objetivo no válido.");
+  }
+  const goal = await goalModel.updateCurrentGoal(homeId, {
+    goalType: body.goalType,
+    targetValue: Math.max(1, Number(body.targetValue) || 10),
+    rewardCoins: Math.max(10, Number(body.rewardCoins) || 50),
+    customLabel: body.customLabel?.trim() || null,
+    setByAdmin: true,
+  });
+  return getWeeklyGoal(homeId);
 }
 
 export async function claimWeeklyGoal(homeId, userId) {

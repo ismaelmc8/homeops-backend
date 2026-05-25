@@ -13,6 +13,8 @@ import socialRoutes from "./social.routes.js";
 import visualizationRoutes from "./visualization.routes.js";
 import templateRoutes from "./template.routes.js";
 import metaRoutes from "./meta.routes.js";
+import smartRoutes from "./smart.routes.js";
+import rpgRoutes from "./rpg.routes.js";
 
 const router = Router();
 
@@ -30,5 +32,7 @@ router.use("/social", socialRoutes);
 router.use("/visualization", visualizationRoutes);
 router.use("/templates", templateRoutes);
 router.use("/meta", metaRoutes);
+router.use("/smart", smartRoutes);
+router.use("/rpg", rpgRoutes);
 
 export default router;

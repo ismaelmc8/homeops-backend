@@ -49,6 +49,15 @@ export async function me(req, res, next) {
   }
 }
 
+export async function resendActivation(req, res, next) {
+  try {
+    const result = await authService.resendActivation(req.body);
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function forgotPassword(req, res, next) {
   try {
     const result = await authService.forgotPassword(req.body);

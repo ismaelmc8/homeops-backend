@@ -13,6 +13,7 @@ import * as userModel from "../models/user.model.js";
 import * as tokenModel from "../models/activationToken.model.js";
 import { sendActivationEmail, sendPasswordResetEmail } from "./mail.service.js";
 import { withTransaction } from "./home.service.js";
+import * as rpgModel from "../models/rpg.model.js";
 
 const BCRYPT_ROUNDS = 10;
 
@@ -100,6 +101,7 @@ export async function setPassword({ token, password, passwordConfirm, name }) {
       await userModel.setName(row.user_id, name.trim(), conn);
     }
     await userModel.setPassword(row.user_id, passwordHash, conn);
+    await rpgModel.incrementTokenVersion(row.user_id, conn);
     await tokenModel.markTokenUsed(row.id, conn);
     await tokenModel.invalidateUserTokens(row.user_id, conn);
   });
@@ -172,7 +174,12 @@ export async function getMe(userId) {
 
 function signToken(user) {
   return jwt.sign(
-    { sub: user.id, homeId: user.home_id, role: user.role },
+    {
+      sub: user.id,
+      homeId: user.home_id,
+      role: user.role,
+      tv: user.token_version ?? 0,
+    },
     getJwtSecret(),
     { expiresIn: getJwtExpiresIn() }
   );
@@ -188,6 +195,31 @@ function sanitizeUser(user) {
     homeId: user.home_id,
     xp: user.xp,
   };
+}
+
+export async function resendActivation({ email }) {
+  if (!email?.trim()) throw new BadRequestError("Email requerido.");
+  const normalized = email.trim().toLowerCase();
+  const user = await userModel.findByEmail(normalized);
+  const generic = { message: "Si la cuenta está pendiente, recibirás un nuevo enlace." };
+
+  if (!user || user.status !== "pending") return generic;
+
+  const rawToken = await withTransaction(async (conn) => {
+    await tokenModel.invalidateUserTokens(user.id, conn);
+    const raw = generateToken();
+    const expires = new Date(Date.now() + getActivationTokenHours() * 3600 * 1000);
+    await tokenModel.createToken(user.id, hashToken(raw), expires, conn);
+    return raw;
+  });
+
+  const mail = await sendActivationEmail({
+    email: normalized,
+    name: user.name,
+    token: rawToken,
+  });
+
+  return { ...generic, devLink: mail.devLink };
 }
 
 export { signToken };

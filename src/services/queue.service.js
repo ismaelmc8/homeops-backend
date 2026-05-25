@@ -83,12 +83,13 @@ export function buildSessionSuggestion(pendingTasks, targetMin = SESSION_TARGET_
   };
 }
 
-export function applyColumnLimits(columns) {
+export function applyColumnLimits(columns, columnLimit = COLUMN_LIMIT) {
+  const limit = Math.max(1, columnLimit);
   const slice = (key) => {
     const all = columns[key] ?? [];
     return {
-      items: all.slice(0, COLUMN_LIMIT),
-      more: Math.max(0, all.length - COLUMN_LIMIT),
+      items: all.slice(0, limit),
+      more: Math.max(0, all.length - limit),
     };
   };
 
@@ -103,7 +104,10 @@ export function applyColumnLimits(columns) {
   };
 }
 
-export function buildKanbanColumns(enriched, { recoveryMode = false, microOnly = false } = {}) {
+export function buildKanbanColumns(
+  enriched,
+  { recoveryMode = false, microOnly = false, columnLimit = COLUMN_LIMIT } = {}
+) {
   let pending = enriched.filter((t) => t.column !== "recent" && t.column !== "snoozed");
 
   if (recoveryMode) {
@@ -120,7 +124,7 @@ export function buildKanbanColumns(enriched, { recoveryMode = false, microOnly =
     next: pending.filter((t) => t.column === "next"),
   };
 
-  const limited = applyColumnLimits(grouped);
+  const limited = applyColumnLimits(grouped, columnLimit);
   const allPending = [
     ...grouped.critical,
     ...grouped.today,
