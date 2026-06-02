@@ -9,7 +9,10 @@
     "start": "node src/server.js",
     "test": "node --test tests/**/*.test.js",
     "db:migrate": "node scripts/migrate.js",
-    "db:seed-tasks": "node scripts/seed-extra-tasks.js"
+    "db:seed-tasks": "node scripts/seed-extra-tasks.js",
+    "db:seed-demo": "node scripts/seed-home-demo.js",
+    "db:reset-progress": "node scripts/reset-home-progress.js",
+    "db:reset-minimal": "node scripts/reset-minimal-test.js"
   },
   "keywords": [],
   "author": "",

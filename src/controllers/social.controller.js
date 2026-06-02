@@ -73,3 +73,27 @@ export async function microGoals(req, res, next) {
     next(e);
   }
 }
+
+export async function pendingRatings(req, res, next) {
+  try {
+    const days = req.query.days ? Number(req.query.days) : 14;
+    const data = await socialService.getPendingRatings(req.user.homeId, req.user.id, { days });
+    res.json(data);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function rateCompletion(req, res, next) {
+  try {
+    const result = await socialService.rateCompletion(
+      req.user.homeId,
+      req.user.id,
+      Number(req.params.completionId),
+      req.body?.rating
+    );
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+}

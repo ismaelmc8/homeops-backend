@@ -14,5 +14,7 @@ router.post("/kudos", socialController.sendKudos);
 router.get("/mvp", socialController.mvp);
 router.get("/ranking", socialController.ranking);
 router.get("/micro-goals", socialController.microGoals);
+router.get("/pending-ratings", socialController.pendingRatings);
+router.post("/completions/:completionId/rate", socialController.rateCompletion);
 
 export default router;

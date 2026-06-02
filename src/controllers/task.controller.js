@@ -9,9 +9,11 @@ export async function listKanban(req, res, next) {
     const microOnly = req.query.microOnly === "1" || req.query.microOnly === "true";
     const assignedToMe =
       req.query.assignedToMe === "1" || req.query.assignedToMe === "true";
+    const showAll = req.query.showAll === "1" || req.query.showAll === "true";
     const data = await taskService.getKanban(req.user.homeId, req.user.id, {
       microOnly,
       assignedToMe,
+      showAll,
     });
     res.json(data);
   } catch (e) {
@@ -160,7 +162,6 @@ export async function complete(req, res, next) {
         feedbackChip: b.feedbackChip ?? null,
         feedbackEmoji: b.feedbackEmoji ?? null,
         tags: b.tags ?? null,
-        qualityRating: b.qualityRating != null ? Number(b.qualityRating) : null,
       }
     );
     res.json(result);

@@ -18,6 +18,8 @@ import {
 import * as metaModel from "../models/meta.model.js";
 import * as smartModel from "../models/smart.model.js";
 import { predictZoneDirtLevel } from "./smart.service.js";
+import { syncZoneDirtFromTasks } from "./zoneDirt.service.js";
+import { leadersByZone } from "../utils/taskPressure.js";
 import { PREDICTION_HISTORY_DAYS } from "../constants/smart.js";
 
 function zoneIcon(name) {
@@ -53,11 +55,14 @@ export function assignDefaultGridPositions(zones) {
 }
 
 export async function getVisualizationOverview(homeId) {
+  await syncZoneDirtFromTasks(homeId);
   const zones = await zoneModel.listByHome(homeId);
   const tasks = await taskModel.listByHome(homeId);
+  const leaders = leadersByZone(tasks);
   const positions = assignDefaultGridPositions(zones);
 
   const zoneCards = zones.map((z, i) => {
+    const lead = leaders.get(z.id);
     const zoneTasks = tasks.filter((t) => t.zone_id === z.id);
     const pending = zoneTasks.filter((t) => {
       if (t.snoozed_until && new Date(t.snoozed_until) > new Date()) return false;
@@ -77,6 +82,9 @@ export async function getVisualizationOverview(homeId) {
       taskCount: zoneTasks.length,
       pendingCount: pending.length,
       criticalCount: critical,
+      leadingTaskName: lead?.taskName ?? null,
+      urgentCount: pending.filter((t) => kanbanColumn(t, z) === "today" || kanbanColumn(t, z) === "critical")
+        .length,
     };
   });
 

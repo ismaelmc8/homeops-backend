@@ -225,25 +225,37 @@ test("kanbanColumn recommended vs next in ideal window", () => {
   assert.equal(kanbanColumn(base, { dirt_level: 2 }), "recommended");
   assert.equal(
     kanbanColumn(
-      { ...base, last_completed_at: new Date(Date.now() - 2.1 * 24 * 60 * 60 * 1000) },
+      {
+        ...base,
+        last_completed_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+        frequency_tolerance_days: 1,
+      },
       { dirt_level: 1 }
     ),
     "next"
   );
 });
 
-test("computePriority ranks critical dirt higher than clean zone", () => {
-  const task = {
-    last_completed_at: new Date(Date.now() - 3 * 86400000),
-    frequency_ideal_days: 2,
-    frequency_tolerance_days: 1,
-    frequency_critical_days: 3,
+test("computePriority ranks very late task higher than on-time task", () => {
+  const late = {
+    last_completed_at: new Date(Date.now() - 20 * 86400000),
+    frequency_ideal_days: 5,
+    frequency_tolerance_days: 2,
+    frequency_critical_days: 7,
+    created_at: new Date(Date.now() - 100 * 86400000),
     is_micro: false,
     task_type: "recurrent_light",
   };
-  const critical = computePriority(task, { dirt_level: 4 });
-  const clean = computePriority(task, { dirt_level: 1 });
-  assert.ok(critical > clean);
+  const fresh = {
+    last_completed_at: new Date(Date.now() - 1 * 86400000),
+    frequency_ideal_days: 5,
+    frequency_tolerance_days: 2,
+    frequency_critical_days: 7,
+    created_at: new Date(Date.now() - 100 * 86400000),
+    is_micro: false,
+    task_type: "recurrent_light",
+  };
+  assert.ok(computePriority(late) > computePriority(fresh));
 });
 
 test("computePriority boosts micro tasks in recovery mode", () => {

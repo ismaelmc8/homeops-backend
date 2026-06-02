@@ -1,4 +1,5 @@
 import { kanbanColumn } from "../services/rewardEngine.js";
+import { taskPressure } from "./taskPressure.js";
 
 function daysSinceCompletion(lastCompletedAt) {
   if (!lastCompletedAt) return null;
@@ -27,7 +28,7 @@ export function computeChaosRisk(zones, tasks) {
     if (col === "critical") score += 6;
     else if (col === "today") {
       const days = daysSinceCompletion(t.last_completed_at);
-      if (days === null && (zone.dirt_level ?? 0) >= 3) score += 4;
+      if (days === null && taskPressure(t) >= 3) score += 4;
       else score += 2;
     }
   }

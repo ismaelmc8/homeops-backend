@@ -19,7 +19,7 @@ export async function findById(id, homeId) {
 export async function create({ homeId, name, dirtLevel, dailyIncrement }) {
   const [r] = await pool.query(
     "INSERT INTO zones (home_id, name, dirt_level, daily_increment) VALUES (?, ?, ?, ?)",
-    [homeId, name, dirtLevel ?? 1, dailyIncrement ?? 1]
+    [homeId, name, dirtLevel ?? 1, dailyIncrement ?? 0]
   );
   return findById(r.insertId, homeId);
 }

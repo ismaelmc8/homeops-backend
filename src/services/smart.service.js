@@ -23,6 +23,7 @@ function formatSettings(row) {
     optimalHoursEnabled: !!row.optimal_hours_enabled,
     burnoutGuardEnabled: !!row.burnout_guard_enabled,
     assigneeSuggestionsEnabled: !!row.assignee_suggestions_enabled,
+    fatigueEnabled: row.fatigue_enabled == null ? true : !!row.fatigue_enabled,
     quietHoursStart: row.quiet_hours_start ?? 22,
     quietHoursEnd: row.quiet_hours_end ?? 8,
     dailyNotificationCap: row.daily_notification_cap ?? 3,
@@ -42,7 +43,7 @@ function todayStr() {
 /** Predicción lineal: suciedad actual + incremento diario − ritmo de limpieza histórico. */
 export function predictZoneDirtLevel(zone, zoneStats, daysAhead = 2) {
   const current = Number(zone.dirt_level) || 0;
-  const increment = Number(zone.daily_increment) || 1;
+  const increment = 0;
   const completions = zoneStats?.completions ?? 0;
 
   if (completions < MIN_COMPLETIONS_FOR_PREDICTION) {
@@ -63,7 +64,7 @@ export function predictZoneDirtLevel(zone, zoneStats, daysAhead = 2) {
           ? `${zone.name} ~ nivel ${Math.round(projected)} en ${daysAhead} días (estimación básica)`
           : null,
       reason:
-        "Pocos datos históricos: usamos solo el ritmo de deterioro de la zona.",
+        "Pocos datos históricos: estimación por presión actual de la zona (E11).",
     };
   }
 
@@ -97,7 +98,7 @@ export function predictZoneDirtLevel(zone, zoneStats, daysAhead = 2) {
       projected >= 2.5
         ? `${zone.name} ~ nivel ${Math.round(projected)} en ${daysAhead} días`
         : null,
-    reason: `Basado en ${completions} limpiezas en ${PREDICTION_HISTORY_DAYS} días y +${increment}/día de deterioro.`,
+    reason: `Basado en ${completions} limpiezas en ${PREDICTION_HISTORY_DAYS} días (sin deterioro pasivo E11).`,
   };
 }
 
@@ -204,7 +205,8 @@ export function applySmartPriorityBoost(basePriority, task, zone, ctx) {
     smartReasons.push("Preventivo: zona limpia + microtarea rápida.");
   }
 
-  if (task.scheduleStatus === "critical" || zone.dirt_level >= 4) {
+  const taskPressureLevel = task.taskPressure ?? task.task_pressure ?? 0;
+  if (task.scheduleStatus === "critical" || taskPressureLevel >= 4 || zone.dirt_level >= 4) {
     boost += 4;
     smartReasons.push("Riesgo alto en la zona.");
   }
@@ -217,6 +219,7 @@ export function pickNextBestTask(pendingTasks) {
   const sorted = [...pendingTasks].sort((a, b) => b.priority - a.priority);
   const best = sorted[0];
   return {
+    id: best.id,
     taskId: best.id,
     name: best.name,
     zoneName: best.zoneName,

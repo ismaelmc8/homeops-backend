@@ -18,5 +18,6 @@ export const SMART_AUTOMATIONS = [
   { key: "optimalHoursEnabled", label: "Horarios óptimos" },
   { key: "burnoutGuardEnabled", label: "Guardia anti-burnout" },
   { key: "assigneeSuggestionsEnabled", label: "Sugerencia de reparto" },
+  { key: "fatigueEnabled", label: "Sistema de fatiga (penaliza si te sobrecargas)" },
   { key: "silenceMode", label: "Modo silencio (0 notificaciones)" },
 ];

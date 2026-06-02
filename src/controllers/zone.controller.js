@@ -1,10 +1,10 @@
 import * as zoneModel from "../models/zone.model.js";
 import { NotFoundError } from "../exceptions/NotFoundError.js";
-import { applyDeteriorationIfNeeded } from "../services/home.service.js";
+import { syncZoneDirtFromTasks } from "../services/zoneDirt.service.js";
 
 export async function list(req, res, next) {
   try {
-    await applyDeteriorationIfNeeded(req.user.homeId);
+    await syncZoneDirtFromTasks(req.user.homeId);
     const zones = await zoneModel.listByHome(req.user.homeId);
     res.json(zones);
   } catch (e) {

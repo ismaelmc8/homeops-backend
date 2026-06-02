@@ -1,3 +1,5 @@
+import { taskPressure } from "../utils/taskPressure.js";
+
 /**
  * Motor de recompensas HomeOps (E1 + E2)
  *
@@ -328,9 +330,9 @@ export function dirtReductionForTaskType(taskType) {
 }
 
 export function computePriority(task, zone, { recoveryMode = false } = {}) {
-  const dirt = zone?.dirt_level ?? 0;
-  const risk = dirt >= 4 ? 100 : dirt >= 3 ? 60 : dirt * 10;
-  const impact = dirt * 8;
+  const pressure = taskPressure(task);
+  const risk = pressure >= 5 ? 100 : pressure >= 4 ? 80 : pressure >= 3 ? 60 : pressure * 12;
+  const impact = pressure * 8;
   let timeScore = 0;
   if (task.last_completed_at) {
     const daysSince =
@@ -353,8 +355,8 @@ export function computePriority(task, zone, { recoveryMode = false } = {}) {
  * Columnas Kanban E3 (documentadas en queue.service.js):
  * recent | critical | today | recommended | next
  */
-export function kanbanColumn(task, zone) {
-  const dirt = zone?.dirt_level ?? 0;
+export function kanbanColumn(task, zone = null) {
+  const pressure = taskPressure(task);
   const daysSince = task.last_completed_at
     ? (Date.now() - new Date(task.last_completed_at).getTime()) / (1000 * 60 * 60 * 24)
     : null;
@@ -367,13 +369,13 @@ export function kanbanColumn(task, zone) {
     return "recent";
   }
 
-  if (dirt >= 4 || (daysSince != null && daysSince > ideal + criticalDays)) {
+  if (pressure >= 5 || (daysSince != null && daysSince > ideal + criticalDays)) {
     return "critical";
   }
 
   if (!task.last_completed_at) {
-    if (dirt >= 3) return "today";
-    if (dirt <= 1) return "next";
+    if (pressure >= 3) return "today";
+    if (pressure <= 1) return "next";
     return "recommended";
   }
 
@@ -384,7 +386,7 @@ export function kanbanColumn(task, zone) {
   }
 
   if (overdue >= 0 && overdue <= tolerance) {
-    if (dirt <= 1 && overdue < 1) return "next";
+    if (pressure <= 1 && overdue < 1) return "next";
     return "recommended";
   }
 

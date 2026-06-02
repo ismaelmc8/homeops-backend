@@ -1,7 +1,9 @@
 import { BadRequestError } from "../exceptions/BadRequestError.js";
 import { ConflictError } from "../exceptions/ConflictError.js";
+import { ForbiddenError } from "../exceptions/ForbiddenError.js";
 import { NotFoundError } from "../exceptions/NotFoundError.js";
 import * as socialModel from "../models/social.model.js";
+import { withTransaction } from "./home.service.js";
 import * as userModel from "../models/user.model.js";
 import * as microGoalModel from "../models/microGoal.model.js";
 import { getBalanceMetrics } from "./balanceMetrics.service.js";
@@ -90,6 +92,7 @@ export async function getTimeline(homeId, filters = {}) {
     tags: row.completion_tags ?? [],
     kudosCount: row.kudos_count,
     isPreventive: row.zone_dirt_at_completion <= 1,
+    peerAvgRating: row.quality_rating != null ? Number(row.quality_rating) : null,
   }));
 }
 
@@ -159,6 +162,74 @@ export async function getMicroGoals(homeId, userId) {
     met: !!goal.completed_at || goal.progress_value >= goal.target_value,
     label: `${goal.target_value} microtareas hoy`,
   };
+}
+
+/** Tareas completadas por otros miembros pendientes de calificar por el usuario actual. */
+export async function getPendingRatings(homeId, userId, { days = 14 } = {}) {
+  const [rows, context] = await Promise.all([
+    socialModel.listPendingPeerRatings(homeId, userId, { days }),
+    socialModel.getPendingRatingsContext(homeId, userId, days),
+  ]);
+
+  let emptyReason = null;
+  if (rows.length === 0) {
+    if (context.activeMembers < 2) {
+      emptyReason = "solo_member";
+    } else if (context.othersCompletions === 0) {
+      emptyReason = context.ownCompletions > 0 ? "only_own_completions" : "no_completions";
+    } else {
+      emptyReason = "all_rated";
+    }
+  }
+
+  return {
+    items: rows.map((row) => ({
+      completionId: row.completion_id,
+      completedAt: row.completed_at,
+      taskName: row.task_name,
+      zoneName: row.zone_name,
+      userId: row.user_id,
+      userName: row.user_name,
+      avgRating: row.avg_rating != null ? Number(row.avg_rating) : null,
+      ratingCount: row.rating_count ?? 0,
+    })),
+    pendingCount: rows.length,
+    emptyReason,
+    context,
+  };
+}
+
+/** Calificar un completado ajeno (1–5 estrellas). Solo quien no hizo la tarea. */
+export async function rateCompletion(homeId, raterUserId, completionId, rating) {
+  const q = Math.round(Number(rating));
+  if (!Number.isFinite(q) || q < 1 || q > 5) {
+    throw new BadRequestError("La valoración debe ser entre 1 y 5 estrellas.");
+  }
+
+  const completion = await socialModel.findCompletionForRating(completionId, homeId);
+  if (!completion) throw new NotFoundError("Completado no encontrado.");
+  if (completion.completer_id === raterUserId) {
+    throw new ForbiddenError("No puedes calificar una tarea que tú completaste.");
+  }
+
+  const already = await socialModel.hasPeerRating(completionId, raterUserId);
+  if (already) throw new ConflictError("Ya calificaste esta tarea.");
+
+  let avgRating = null;
+  await withTransaction(async (conn) => {
+    await socialModel.addPeerRating({ completionId, raterUserId, rating: q }, conn);
+    avgRating = await socialModel.syncCompletionQualityFromPeers(completionId, conn);
+  });
+
+  return {
+    message: "¡Gracias por calificar!",
+    rating: q,
+    avgRating,
+  };
+}
+
+export async function getPendingRatingsCount(homeId, userId) {
+  return socialModel.countPendingPeerRatings(homeId, userId);
 }
 
 export async function afterCompletionSocial(

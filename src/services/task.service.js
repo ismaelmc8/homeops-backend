@@ -6,19 +6,24 @@ import * as userModel from "../models/user.model.js";
 import * as streakModel from "../models/streak.model.js";
 import * as fatigueModel from "../models/fatigue.model.js";
 import * as assigneeModel from "../models/assignee.model.js";
+import * as smartModel from "../models/smart.model.js";
 import {
   calculateReward,
-  dirtReductionForTaskType,
   computePriority,
   kanbanColumn,
-  DIRT_LABELS,
   isRecurrentTask,
   fatiguePointsForDifficulty,
   FATIGUE_LIMIT,
 } from "./rewardEngine.js";
 import { buildKanbanColumns, isRecoveryMode } from "./queue.service.js";
 import { getUserMetrics } from "./metrics.service.js";
-import { applyDeteriorationIfNeeded, withTransaction } from "./home.service.js";
+import { withTransaction } from "./home.service.js";
+import { syncZoneDirtFromTasks } from "./zoneDirt.service.js";
+import {
+  taskPressure,
+  taskScheduleStatus,
+  dirtLabelForPressure,
+} from "../utils/taskPressure.js";
 import { processCooperativeCompletion } from "./cooperation.service.js";
 import { getActiveEvent, getEventCoinMultiplier, tryPerfectDayBonus } from "./event.service.js";
 import { getWeeklyGoal } from "./goal.service.js";
@@ -65,17 +70,16 @@ function stripColumnTasks(columns) {
 export async function getKanban(
   homeId,
   userId,
-  { microOnly = false, assignedToMe = false } = {}
+  { microOnly = false, assignedToMe = false, showAll = false } = {}
 ) {
-  await applyDeteriorationIfNeeded(homeId);
+  const zoneLeaders = await syncZoneDirtFromTasks(homeId);
 
   const lastActiveAt = await userModel.getLastActive(userId);
   const recoveryMode = isRecoveryMode(lastActiveAt);
   await userModel.touchLastActive(userId);
 
   const tasks = await taskModel.listByHome(homeId);
-  const zones = await zoneModel.listByHome(homeId);
-  const zoneMap = Object.fromEntries(zones.map((z) => [z.id, z]));
+  const zonesFresh = await zoneModel.listByHome(homeId);
   const assigneeMap = await assigneeModel.listForTasks(tasks.map((t) => t.id));
 
   const recurrentIds = tasks.filter((t) => isRecurrentTask(t.task_type)).map((t) => t.id);
@@ -93,19 +97,17 @@ export async function getKanban(
   }
 
   const enriched = filteredTasks.map((t) => {
-    const zone = zoneMap[t.zone_id] ?? { dirt_level: t.zone_dirt_level, name: t.zone_name };
+    const zone = zonesFresh.find((z) => z.id === t.zone_id) ?? {
+      dirt_level: t.zone_dirt_level,
+      name: t.zone_name,
+    };
+    const pressure = taskPressure(t);
+    const leader = zoneLeaders.get(t.zone_id);
     const snoozed = t.snoozed_until && new Date(t.snoozed_until) > new Date();
     let column = kanbanColumn(t, zone);
     if (snoozed) column = "snoozed";
     const priority = snoozed ? 0 : computePriority(t, zone, { recoveryMode });
-    const daysSince = daysSinceCompletion(t.last_completed_at);
-    let scheduleStatus = "ok";
-    if (daysSince !== null) {
-      const overdue = daysSince - t.frequency_ideal_days;
-      if (overdue > t.frequency_critical_days) scheduleStatus = "critical";
-      else if (overdue > t.frequency_tolerance_days) scheduleStatus = "late";
-      else if (overdue > 0) scheduleStatus = "tolerance";
-    }
+    const scheduleStatus = taskScheduleStatus(t);
     const streakCount = streakMap[t.id] ?? 0;
     const assignees = assigneeMap[t.id] ?? [];
     return {
@@ -113,8 +115,11 @@ export async function getKanban(
       name: t.name,
       zoneId: t.zone_id,
       zoneName: zone.name,
-      dirtLevel: zone.dirt_level,
-      dirtLabel: DIRT_LABELS[zone.dirt_level] ?? "—",
+      taskPressure: pressure,
+      dirtLevel: pressure,
+      dirtLabel: dirtLabelForPressure(pressure),
+      zoneDirtLevel: zone.dirt_level,
+      leadingTaskInZone: leader?.taskName ?? null,
       taskType: t.task_type,
       difficulty: t.difficulty,
       durationMin: t.duration_min,
@@ -137,7 +142,7 @@ export async function getKanban(
     fatiguePoints,
     fatigueLimit: FATIGUE_LIMIT,
     enrichedTasks: enriched,
-    zones,
+    zones: zonesFresh,
   });
 
   if (smart.settings.autoPriorityEnabled) {
@@ -152,16 +157,18 @@ export async function getKanban(
   }
 
   const effectiveMicroOnly = microOnly || smart.effectiveMicroOnly;
+  const fatigueEnabled = smart.settings.fatigueEnabled !== false;
   const queue = buildKanbanColumns(enriched, {
     recoveryMode,
     microOnly: effectiveMicroOnly,
-    columnLimit: smart.columnLimit,
+    columnLimit: showAll ? Number.MAX_SAFE_INTEGER : smart.columnLimit,
   });
 
-  const atRisk = zones.filter((z) => z.dirt_level >= 4).length;
+  const atRisk = zonesFresh.filter((z) => z.dirt_level >= 4).length;
   let homeSummary = "Estado: estable";
   if (atRisk > 0) homeSummary = `${atRisk} zona(s) en riesgo`;
-  else if (zones.some((z) => z.dirt_level >= 2)) homeSummary = "Estado: requiere atención pronto";
+  else if (zonesFresh.some((z) => z.dirt_level >= 2))
+    homeSummary = "Estado: requiere atención pronto";
 
   const done = await taskModel.listRecentCompletions(homeId, 7);
   const activeEvent = await getActiveEvent(homeId);
@@ -185,7 +192,7 @@ export async function getKanban(
     recoveryMode,
     done,
     homeSummary,
-    zones,
+    zones: zonesFresh,
     activeEvent,
     weeklyGoal,
     microGoal,
@@ -194,12 +201,15 @@ export async function getKanban(
     socialSettings,
     meta,
     welcomeMessage,
-    fatigue: {
-      points: fatiguePoints,
-      limit: FATIGUE_LIMIT,
-      high: fatiguePoints > FATIGUE_LIMIT,
-      nearLimit: fatiguePoints >= FATIGUE_LIMIT - 2 && fatiguePoints <= FATIGUE_LIMIT,
-    },
+    showAll,
+    fatigue: fatigueEnabled
+      ? {
+          points: fatiguePoints,
+          limit: FATIGUE_LIMIT,
+          high: fatiguePoints > FATIGUE_LIMIT,
+          nearLimit: fatiguePoints >= FATIGUE_LIMIT - 2 && fatiguePoints <= FATIGUE_LIMIT,
+        }
+      : null,
     smart: {
       nextBestTask: smart.nextBestTask,
       predictions: smart.predictions,
@@ -245,15 +255,13 @@ export async function completeTask(
     feedbackChip = null,
     feedbackEmoji = null,
     tags = null,
-    qualityRating = null,
   } = {}
 ) {
-  await applyDeteriorationIfNeeded(homeId);
+  await syncZoneDirtFromTasks(homeId);
   const task = await taskModel.findById(taskId, homeId);
   if (!task) throw new NotFoundError("Tarea no encontrada.");
 
-  const dirtLevel = task.zone_dirt_level;
-  const reduction = task.dirt_reduction || dirtReductionForTaskType(task.task_type);
+  const dirtLevel = taskPressure(task);
   const daysSince = daysSinceCompletion(task.last_completed_at);
 
   const streakRow = isRecurrentTask(task.task_type)
@@ -261,9 +269,12 @@ export async function completeTask(
     : null;
   const currentStreak = streakRow?.count ?? 0;
 
+  const smartRow = await smartModel.getHomeSettings(homeId);
+  const fatigueEnabled = smartRow.fatigue_enabled == null ? true : !!smartRow.fatigue_enabled;
+
   const fatigueBefore = await fatigueModel.getToday(userId);
-  const fatiguePointsBefore = fatigueBefore.points ?? 0;
-  const fatiguePointsAdded = fatiguePointsForDifficulty(task.difficulty);
+  const fatiguePointsBefore = fatigueEnabled ? fatigueBefore.points ?? 0 : 0;
+  const fatiguePointsAdded = fatigueEnabled ? fatiguePointsForDifficulty(task.difficulty) : 0;
 
   const activeEventRow = await getActiveEvent(homeId);
   const { multiplier: eventMultiplier } = getEventCoinMultiplier(
@@ -273,13 +284,9 @@ export async function completeTask(
   const baseBuffMultiplier = await getHomeBuffMultiplier(homeId);
   const prefs = await rpgModel.getPrefs(userId);
   const { effects: buffEffects } = await getActiveBuffEffects(userId);
-  const q =
-    qualityRating != null && qualityRating >= 1 && qualityRating <= 5
-      ? Math.round(qualityRating)
-      : null;
   const rpgModifiers = getRpgRewardModifiers({
     specialization: prefs.specialization,
-    qualityRating: q,
+    qualityRating: null,
     dirtLevel,
     durationMin: task.duration_min,
     taskType: task.task_type,
@@ -351,8 +358,6 @@ export async function completeTask(
       const boss = await onBossTaskCompleted(homeId, taskId, userId, conn);
       bossBonusCoins = boss.bossBonus;
       extraMessages.push(...boss.messages);
-    } else {
-      await zoneModel.reduceDirt(task.zone_id, homeId, reduction);
     }
 
     await userModel.addCoins(userId, reward.coins + coopBonusCoins + bossBonusCoins, conn);
@@ -362,10 +367,8 @@ export async function completeTask(
       await streakModel.upsert(userId, taskId, reward.newStreak, conn);
     }
 
-    await fatigueModel.addPoints(userId, fatiguePointsToAdd, conn);
-
-    if (q) {
-      await rpgModel.setCompletionQuality(completionId, q, conn);
+    if (fatigueEnabled) {
+      await fatigueModel.addPoints(userId, fatiguePointsToAdd, conn);
     }
 
     await afterCompletionAchievements(
@@ -434,6 +437,8 @@ export async function completeTask(
     }
   });
 
+  await syncZoneDirtFromTasks(homeId);
+
   const coins = await userModel.getWallet(userId);
   const totalCoins =
     reward.coins + coopBonusCoins + perfectDayBonus + dailyBonusCoins + bossBonusCoins + dailyMissionBonus;
@@ -469,7 +474,7 @@ export async function completeTask(
 }
 
 export async function getMetricsSummary(homeId, userId) {
-  await applyDeteriorationIfNeeded(homeId);
+  await syncZoneDirtFromTasks(homeId);
   const zones = await zoneModel.listByHome(homeId);
   const tasks = await taskModel.listByHome(homeId);
   const completions = await taskModel.listRecentCompletions(homeId, 7);

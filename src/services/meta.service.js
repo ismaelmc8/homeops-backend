@@ -5,6 +5,7 @@ import * as taskModel from "../models/task.model.js";
 import * as eventModel from "../models/event.model.js";
 import * as userModel from "../models/user.model.js";
 import { computeChaosRisk } from "../utils/chaos.js";
+import { syncZoneDirtFromTasks } from "./zoneDirt.service.js";
 import {
   DAILY_MISSIONS,
   SEASON_THEMES,
@@ -252,6 +253,7 @@ export async function syncLivingBase(homeId, conn = pool) {
 }
 
 export async function getMetaDashboard(homeId, userId) {
+  await syncZoneDirtFromTasks(homeId);
   await ensureBossMissions(homeId);
   const { living, chaosRisk } = await syncLivingBase(homeId);
   const dailyRow = await ensureDailyMission(homeId);
